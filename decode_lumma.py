@@ -3,6 +3,7 @@ import sys
 import pefile
 import argparse
 import re
+import json
 
 
 # Hash: 5d58bc449693815f6fb0755a364c4cd3a8e2a81188e431d4801f2fb0b1c2de8f
@@ -99,7 +100,7 @@ def main():
         except Exception:
             return
 
-    print(config_dict)
+    print(json.dumps(config_dict, indent=4))
 
 
 if __name__ == "__main__":
