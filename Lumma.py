@@ -1,12 +1,18 @@
 import base64
-import sys
-import pefile
-import argparse
 import re
-import json
+import pefile
 
 
-# Hash: 5d58bc449693815f6fb0755a364c4cd3a8e2a81188e431d4801f2fb0b1c2de8f
+def yara_scan(raw_data, rule_name):
+    yara_rules = yara.compile(source=RULE_SOURCE)
+    matches = yara_rules.match(data=raw_data)
+
+    for match in matches:
+        for block in match.strings:
+            if block.identifier != rule_name:
+                continue
+            for instance in block.instances:
+                return instance.offset
 
 
 def is_base64(s):
@@ -16,12 +22,13 @@ def is_base64(s):
     else:
         return pattern.match(s)
 
+
 def extract_strings(data, minchars):
     endlimit = b"8192"
     apat = b"([\x20-\x7e]{" + str(minchars).encode() + b"," + endlimit + b"})\x00"
-    upat = b"((?:[\x20-\x7e][\x00]){" + str(minchars).encode() + b"," + endlimit + b"})\x00\x00"
     strings = [string.decode() for string in re.findall(apat, data)]
     return strings
+
 
 def get_base64_strings(str_list):
     base64_strings = []
@@ -30,40 +37,34 @@ def get_base64_strings(str_list):
             base64_strings.append(s)
     return base64_strings
 
+
 def get_rdata(data):
     rdata = None
     pe = pefile.PE(data=data)
     section_idx = 0
     for section in pe.sections:
-        if section.Name == b'.rdata\x00\x00':
+        if section.Name == b".rdata\x00\x00":
             rdata = pe.sections[section_idx].get_data()
             break
         section_idx += 1
     return rdata
 
+
 def xor_data(data, key):
     decoded = bytearray()
-    key_len = len(key)
     for i in range(len(data)):
-        if i >= key_len:
-            break
-        decoded.append(data[i] ^ key[i])
+        decoded.append(data[i] ^ key[i % len(data)])
     return decoded
+
 
 def contains_non_printable(byte_array):
     for byte in byte_array:
         if not chr(byte).isprintable():
             return True
-    return False      
+    return False
 
-def main():
-    parser = argparse.ArgumentParser(description='Lumma C2 decoder')
-    parser.add_argument('-f','--file', help='Path to unpacked Lumma', required=True)
-    args = parser.parse_args()
 
-    with open(args.file, "rb") as f:
-        data = f.read()
-
+def extract_config(data):
     config_dict = {"C2": []}
 
     try:
@@ -89,8 +90,8 @@ def main():
             for base64_str in base64_strings:
                 try:
                     decoded_bytes = base64.b64decode(base64_str, validate=True)
-                    encoded_c2 = decoded_bytes[:32]
-                    xor_key = decoded_bytes[32:]
+                    encoded_c2 = decoded_bytes[32:]
+                    xor_key = decoded_bytes[:32]
                     decoded_c2 = xor_data(encoded_c2, xor_key)
 
                     if not contains_non_printable(decoded_c2):
@@ -100,8 +101,11 @@ def main():
         except Exception:
             return
 
-    print(json.dumps(config_dict, indent=4))
+    return config_dict
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    with open(sys.argv[1], "rb") as f:
+        print(extract_config(f.read()))
